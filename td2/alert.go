@@ -5,19 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/PagerDuty/go-pagerduty"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/PagerDuty/go-pagerduty"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type alertMsg struct {
-	pd   bool
-	disc bool
-	tg   bool
+	pd    bool
+	disc  bool
+	slack bool
+	tg    bool
 
 	severity string
 	resolved bool
@@ -32,6 +34,8 @@ type alertMsg struct {
 
 	discHook     string
 	discMentions string
+
+	slackHook string
 }
 
 type notifyDest uint8
@@ -40,12 +44,14 @@ const (
 	pd notifyDest = iota
 	tg
 	di
+	sl
 )
 
 type alarmCache struct {
 	SentPdAlarms   map[string]time.Time            `json:"sent_pd_alarms"`
 	SentTgAlarms   map[string]time.Time            `json:"sent_tg_alarms"`
 	SentDiAlarms   map[string]time.Time            `json:"sent_di_alarms"`
+	SentSlAlarms   map[string]time.Time            `json:"sent_sl_alarms"`
 	AllAlarms      map[string]map[string]time.Time `json:"sent_all_alarms"`
 	flappingAlarms map[string]map[string]time.Time
 	notifyMux      sync.RWMutex
@@ -56,6 +62,7 @@ var alarms = &alarmCache{
 	SentPdAlarms:   make(map[string]time.Time),
 	SentTgAlarms:   make(map[string]time.Time),
 	SentDiAlarms:   make(map[string]time.Time),
+	SentSlAlarms:   make(map[string]time.Time),
 	AllAlarms:      make(map[string]map[string]time.Time),
 	flappingAlarms: make(map[string]map[string]time.Time),
 	notifyMux:      sync.RWMutex{},
@@ -79,6 +86,9 @@ func shouldNotify(msg *alertMsg, dest notifyDest) bool {
 	case di:
 		whichMap = alarms.SentDiAlarms
 		service = "Discord"
+	case sl:
+		whichMap = alarms.SentSlAlarms
+		service = "Slack"
 	}
 
 	switch {
@@ -165,6 +175,57 @@ type DiscordEmbed struct {
 	Color       uint   `json:"color"`
 }
 
+type SlackMessage struct {
+	Blocks []SlackBlock `json:"blocks"`
+}
+
+type SlackBlock struct {
+	Type string    `json:"type"`
+	Text SlackText `json:"text"`
+}
+
+type SlackText struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func notifySlack(msg *alertMsg) (err error) {
+	if !msg.slack {
+		return nil
+	}
+	if !shouldNotify(msg, di) {
+		return nil
+	}
+	slackPost := buildSlackMessage(msg)
+	client := &http.Client{}
+	data, err := json.MarshalIndent(slackPost, "", "  ")
+	if err != nil {
+		l("notify slack:", err)
+		return err
+	}
+
+	req, err := http.NewRequest("POST", msg.slackHook, bytes.NewBuffer(data))
+	if err != nil {
+		l("notify slack:", err)
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		l("notify slack:", err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Println(resp)
+		l("notify slack:", err)
+		return err
+	}
+	return nil
+}
+
 func buildDiscordMessage(msg *alertMsg) *DiscordMessage {
 	prefix := "🚨 ALERT: "
 	if msg.resolved {
@@ -176,6 +237,19 @@ func buildDiscordMessage(msg *alertMsg) *DiscordMessage {
 		Embeds: []DiscordEmbed{{
 			Description: msg.message,
 		}},
+	}
+}
+
+func buildSlackMessage(msg *alertMsg) *SlackMessage {
+	prefix := "🚨 *ALERT: "
+	if msg.resolved {
+		prefix = "💜 *Resolved: "
+	}
+	return &SlackMessage{
+		Blocks: []SlackBlock{
+			{Type: "section", Text: SlackText{Type: "mrkdwn", Text: prefix + msg.chain + "*"}},
+			{Type: "section", Text: SlackText{Type: "mrkdwn", Text: msg.message}},
+		},
 	}
 }
 
@@ -260,6 +334,7 @@ func (c *Config) alert(chainName, message, severity string, resolved bool, id *s
 	a := &alertMsg{
 		pd:           c.Pagerduty.Enabled && c.Chains[chainName].Alerts.Pagerduty.Enabled,
 		disc:         c.Discord.Enabled && c.Chains[chainName].Alerts.Discord.Enabled,
+		slack:        c.Slack.Enabled && c.Chains[chainName].Alerts.Slack.Enabled,
 		tg:           c.Telegram.Enabled && c.Chains[chainName].Alerts.Telegram.Enabled,
 		severity:     severity,
 		resolved:     resolved,
@@ -272,6 +347,7 @@ func (c *Config) alert(chainName, message, severity string, resolved bool, id *s
 		tgMentions:   strings.Join(c.Chains[chainName].Alerts.Telegram.Mentions, " "),
 		discHook:     c.Chains[chainName].Alerts.Discord.Webhook,
 		discMentions: strings.Join(c.Chains[chainName].Alerts.Discord.Mentions, " "),
+		slackHook:    c.Chains[chainName].Alerts.Slack.Webhook,
 	}
 	c.alertChan <- a
 	c.chainsMux.RUnlock()

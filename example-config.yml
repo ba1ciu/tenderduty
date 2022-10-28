@@ -32,6 +32,13 @@ discord:
   # The webhook is set by right-clicking on a channel, editing the settings, and configuring a webhook in the intergrations section.
   webhook: https://discord.com/api/webhooks/999999999999999999/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
 
+# Slack settings
+slack:
+  # Alert to slack?
+  enabled: no
+  # The webhook is set by creating a Slack app, and activating incoming webhook.
+  webhook: https://hooks.slack.com/services/ssssssssssssssssssssssssssssssssssssssssssssss
+
 # Telegram settings
 telegram:
   # Alert via telegram? Note: also supersedes chain-specific settings
@@ -94,6 +101,11 @@ chains:
 
       # Discord settings
       discord:
+        enabled: yes
+        webhook: "" # uses default if blank
+
+      # Slack settings
+      slack:
         enabled: yes
         webhook: "" # uses default if blank
 

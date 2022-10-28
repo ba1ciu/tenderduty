@@ -56,6 +56,8 @@ type Config struct {
 	Pagerduty PDConfig `yaml:"pagerduty"`
 	// Discord webhook information
 	Discord DiscordConfig `yaml:"discord"`
+	// Slack webhook information
+	Slack SlackConfig `yaml:"slack"`
 	// Telegram api information
 	Telegram TeleConfig `yaml:"telegram"`
 
@@ -160,6 +162,9 @@ type AlertConfig struct {
 	// DiscordAlerts: Should discord alerts be sent for this chain? Both 'config.discord.enabled: yes' and this must be set.
 	//Deprecated: use Discord.Enabled instead
 	DiscordAlerts bool `yaml:"discord_alerts"`
+	// SlackAlerts: Should slack alerts be sent for this chain? Both 'config.slack.enabled: yes' and this must be set.
+	//Deprecated: use Slack.Enabled instead
+	SlackAlerts bool `yaml:"slack_alerts"`
 	// TelegramAlerts: Should telegram alerts be sent for this chain? Both 'config.telegram.enabled: yes' and this must be set.
 	//Deprecated: use Telegram.Enabled instead
 	TelegramAlerts bool `yaml:"telegram_alerts"`
@@ -169,6 +174,8 @@ type AlertConfig struct {
 	Pagerduty PDConfig `yaml:"pagerduty"`
 	// Discord webhook information
 	Discord DiscordConfig `yaml:"discord"`
+	// Slack webhook information
+	Slack SlackConfig `yaml:"slack"`
 	// Telegram webhook information
 	Telegram TeleConfig `yaml:"telegram"`
 }
@@ -197,6 +204,13 @@ type DiscordConfig struct {
 	Enabled  bool     `yaml:"enabled"`
 	Webhook  string   `yaml:"webhook"`
 	Mentions []string `yaml:"mentions"`
+	// TODO
+}
+
+// SlackConfig holds the information needed to publish to a Slack webhook for sending alerts
+type SlackConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Webhook string `yaml:"webhook"`
 	// TODO
 }
 
@@ -264,6 +278,9 @@ func validateConfig(c *Config) (fatal bool, problems []string) {
 		if v.Alerts.DiscordAlerts && !v.Alerts.Discord.Enabled {
 			v.Alerts.Discord.Enabled = true
 		}
+		if v.Alerts.SlackAlerts && !v.Alerts.Slack.Enabled {
+			v.Alerts.Slack.Enabled = true
+		}
 		if v.Alerts.TelegramAlerts && !v.Alerts.Telegram.Enabled {
 			v.Alerts.Telegram.Enabled = true
 		}
@@ -275,6 +292,9 @@ func validateConfig(c *Config) (fatal bool, problems []string) {
 		if v.Alerts.Discord.Webhook == "" {
 			v.Alerts.Discord.Webhook = c.Discord.Webhook
 			v.Alerts.Discord.Mentions = c.Discord.Mentions
+		}
+		if v.Alerts.Slack.Webhook == "" {
+			v.Alerts.Slack.Webhook = c.Slack.Webhook
 		}
 		if v.Alerts.Telegram.ApiKey == "" {
 			v.Alerts.Telegram.ApiKey = c.Telegram.ApiKey
@@ -291,6 +311,9 @@ func validateConfig(c *Config) (fatal bool, problems []string) {
 		switch {
 		case v.Alerts.Discord.Enabled && !c.Discord.Enabled:
 			problems = append(problems, fmt.Sprintf("warn: %20s is configured for discord alerts, but it is not enabled", k))
+			fallthrough
+		case v.Alerts.Slack.Enabled && !c.Slack.Enabled:
+			problems = append(problems, fmt.Sprintf("warn: %20s is configured for slack alerts, but it is not enabled", k))
 			fallthrough
 		case v.Alerts.Pagerduty.Enabled && !c.Pagerduty.Enabled:
 			problems = append(problems, fmt.Sprintf("warn: %20s is configured for pagerduty alerts, but it is not enabled", k))

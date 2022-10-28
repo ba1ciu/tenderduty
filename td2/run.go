@@ -45,6 +45,10 @@ func Run(configFile, stateFile, chainConfigDirectory string) error {
 					if e != nil {
 						l(msg.chain, "error sending alert to discord", e.Error())
 					}
+					e = notifySlack(msg)
+					if e != nil {
+						l(msg.chain, "error sending alert to slack", e.Error())
+					}
 					e = notifyTg(msg)
 					if e != nil {
 						l(msg.chain, "error sending alert to telegram", e.Error())
